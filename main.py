@@ -154,7 +154,6 @@ async def revealtile(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator:
         global not_revealed
         global revealedtiles
-        print(not_revealed)
         if len(not_revealed) > 0:
             to_reveal = random.choice(not_revealed)
             not_revealed.remove(to_reveal)
@@ -197,8 +196,7 @@ async def verify(interaction: discord.Interaction, item: str, screenshot: discor
         for items, prizes in generated_items:
             if item == items:
                 remove_tuple = items, prizes
-                item = item.upper()
-                embed = discord.Embed(title="BINGO!", description=f"{item} you win! [{prizes}]  |  {mention_id} will pay out shortly")
+                embed = discord.Embed(title="BINGO!", description=f"{item.upper()} you win! [{prizes}]  |  {mention_id} will pay out shortly")
                 embed.set_image(url=screenshot.url)
                 await interaction.response.send_message(embed=embed)
                 generated_items.remove(remove_tuple)
@@ -297,6 +295,7 @@ async def backup(interaction: discord.Interaction, filename: str):
 @app_commands.autocomplete(filename=backup_autocomplete)
 async def load(interaction: discord.Interaction, filename: str):
     if interaction.user.guild_permissions.administrator:
+        global generated_items
         if os.path.exists(f"{filename}.json") and filename not in file_blacklist:
             backup = f"{filename}.json"
             with open(backup) as f:
