@@ -1,4 +1,5 @@
 import json
+from re import T
 from .GenerationEncoder import GenerationEncoder
 import os
 
@@ -16,16 +17,16 @@ class Backup:
         self.not_revealed = []
         self.backup_list = ""
         
-    def Create(self, filename):
+    def create(self, filename):
         if filename not in self.file_blacklist:
             file = f"src/Json{filename}.json"
             with open(file, "w") as f:
                 json.dump(self.new_backup, f, indent=4, cls=GenerationEncoder)
             return
         else:
-            return False
+            raise ValueError(f"Cannot create backup with names {self.file_blacklist}!")
             
-    def Load(self, filename):
+    def load(self, filename):
         if os.path.exists(f"src/Json/{filename}.json") and filename not in self.file_blacklist:
             backup = f"src/Json/{filename}.json"
             with open(backup, "r") as f:
@@ -39,19 +40,23 @@ class Backup:
             with open("src/Json/revealed.json", "w") as f:
                 json.dump([], f)
             return
+        elif filename in self.file_blacklist:
+            raise ValueError(f"Cannot load backup with names {self.file_blacklist}!")
         else:
-            return False
+            raise FileNotFoundError(f"Backup {filename} does not exist!")
     
-    def List(self):
+    def list(self):
         backups = [backup[:-5] for backup in os.listdir(self.directory) if backup.endswith(self.file_type) and backup not in self.file_blacklist]
         for backup in backups:
             self.backup_list += f"{backup} \n"
         return self.backup_list
     
-    def Remove(self, filename):
+    def remove(self, filename):
         backups = [backup[:-5] for backup in os.listdir(self.directory) if backup.endswith(self.file_type) and backup not in self.file_blacklist]
         if filename in backups:
             os.remove(f"src/Json/{filename}.json")
-            return
+            return True
+        elif filename in self.file_blacklist:
+            raise ValueError(f"Cannot remove backup with names {self.file_blacklist}!")
         else:
-            return False
+            raise FileNotFoundError(f"Backup {filename} does not exist!")

@@ -1,6 +1,6 @@
 import json
 import random
-from .Dclasses import Generation
+from .DataStructure import Generation
 from .GenerationEncoder import GenerationEncoder
 from dataclasses import asdict
 
@@ -17,9 +17,8 @@ class PrizeSelector:
     
     def select_prize(self, prize):
         new_item = random.sample(self.items, k=1)[0]
-        for item in self.current_items:
-            while new_item == item["item"]:
-                new_item = random.sample(self.items, k=1)[0]
+        while new_item in self.current_items:
+            new_item = random.sample(self.items, k=1)[0]
         if prize in self.prizes:
             item_prize = Generation(item=new_item, prize=prize)
             new_items = self.current_items + [asdict(item_prize)]
@@ -27,6 +26,6 @@ class PrizeSelector:
                 json.dump(new_items, f, indent=4, cls=GenerationEncoder)
             with open("src/Json/not_revealed.json", "w") as f:
                 json.dump([new_item] + [item["item"] for item in self.current_items], f, indent=4)
-            return f"Added {prize} to board"
+            return prize, new_item
         else:
-            return "Not a valid prize"
+            raise ValueError("Prize not found")

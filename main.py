@@ -1,231 +1,293 @@
+# Description: Main file for the Bingo Bot project. This file contains the main functions for the bot to run.
+from datetime import datetime
+
 import discord
 from discord import app_commands
 import os
+
+from collections import defaultdict, Counter
 from dotenv import load_dotenv
-from modules.AutoComplete import AutoComplete
-from modules.PrizeSelector import PrizeSelector
-from modules.BingoGenerator import BingoGenerator
-from modules.Show import Show
-from modules.Revealing import Reveal
-from modules.Backup import Backup
-from modules.BingoHandler import BingoHandler
-from modules.Verify import Verify
-ac = AutoComplete()
-file_blacklist = ac.file_blacklist
-
-
-
 load_dotenv()
-mention_id = os.getenv("MENTION_ID")
-sync_to_guild = discord.Object(id=os.getenv("TEST_GUILD"))
-BotToken = os.getenv("TEST_TOKEN")
-intents = discord.Intents.all()
-client = discord.Client(intents=intents)
+
+from src.modules.BingoGenerator import BingoGenerator
+from src.modules.PrizeSelector import PrizeSelector
+from src.modules.EntryHandler import EntryHandler
+from src.modules.Show import Show
+from src.modules.Revealing import Reveal
+from src.modules.Backup import Backup
+from src.modules.AutoComplete import AutoComplete
+from src.modules.Verify import Verify
+
+
+PERMISSION_ERROR = "You are not allowed to call this function"
+NUKE_LIST = ["[", "]", "{", "}", ",", "'"]
+MENTION_ID = os.getenv("MENTION_ID")
+SYNC_GUILD = discord.Object(id=os.getenv("LIVE_GUILD"))
+TEST_CHANNEL = int(os.getenv("TEST_CHANNEL"))
+BINGO_CHANNEL = int(os.getenv("BINGO_CHANNEL"))
+FILE_BLACKLIST = os.getenv("FILE_BLACKLIST")
+BOT_TOKEN = os.getenv("LIVE_TOKEN")
+INTENTS = discord.Intents.all()
+client = discord.Client(intents=INTENTS)
 tree = app_commands.CommandTree(client)
-permission_error = "You are not allowed to call this function"
+current_name = ""
+generated_items = []
+user_counters = defaultdict(Counter)
+ac = AutoComplete()
+
+async def command_tracker(interaction: discord.Interaction):
+    user_id = interaction.user
+    user_counters[user_id]["verify"] += 1
+    print(user_counters[user_id]["verify"])
+
+    if user_counters[user_id]["verify"] % 3 == 0:
+        print(f"{user_id} has called verify {user_counters[user_id]['verify']} times")
+        await release_tile(interaction)
+
+    return user_counters[user_id]["verify"]
+    
+def reset_tracker():
+    user_counters.clear()
+
+async def release_tile(interaction: discord.Interaction):
+        tiles = Reveal()
+        revealed_tiles = tiles.tile()
+        if revealed_tiles:
+            await interaction.channel.send(content=f"**{interaction.user} just revealed a new tile:**\n{revealed_tiles}")
+        else:
+            await interaction.channel.send(content="**All tiles have been revealed!**")
+
 
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
     print('-------------------------------------------------')
-    await tree.sync(guild=sync_to_guild) 
+    await tree.sync(guild=SYNC_GUILD)
+    await client.change_presence(activity=discord.Game(name="Bingo!", start=datetime.utcnow()))
+    #await client.get_channel(TEST_CHANNEL).send(f"Bot is online, use /help for commands")
+    await client.get_channel(BINGO_CHANNEL).send(f"Bot is online, use /help for commands")
 
-@tree.command(name="generate", description="Generates pairs of prizes/items", guild=sync_to_guild)
+@tree.command(name="shutdown", guild=SYNC_GUILD)
+async def shutdown(interaction: discord.Interaction):
+    if interaction.user.id == 225683257146998785:
+        await interaction.channel.send("Shutting Down for Maintenance")
+        await interaction.response.send_message("Shutting Down for Maintenance", ephemeral=True)
+        exit()
+    else:
+        await interaction.response.send_message(PERMISSION_ERROR, ephemeral=True)
+
+@tree.command(name="generate",description="Generates pairs of prizes/items", guild=SYNC_GUILD)
 @app_commands.describe(amount="Number of item pairs to generate")
 async def generate(interaction: discord.Interaction, amount: int):
     if interaction.user.guild_permissions.administrator:
-        bingo_generator = BingoGenerator()
-        bingo_generator.Generate(amount)
+        generator = BingoGenerator()
+        generator.generate(amount)
         await interaction.response.send_message(content=f"{amount} items/prizes generated.")
+        reset_tracker()
+        return
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="selectprize", description="Select a prize to add along with a random item to current board", guild=sync_to_guild)
+@tree.command(name="selectprize",description="Select a prize to add along with a random item to current board", guild=SYNC_GUILD)
 @app_commands.describe(prize="What prize to add, must be exact name from /show prizes")
 @app_commands.autocomplete(prize=ac.prize)
 async def selectprize(interaction: discord.Interaction, prize: str):
     if interaction.user.guild_permissions.administrator:
         prize_selector = PrizeSelector()
-        response = prize_selector.select_prize(prize)
-        await interaction.response.send_message(response)
+        try:
+            new_prize, new_item = prize_selector.select_prize(prize)
+            await interaction.response.send_message(f"added {new_prize} and {new_item} to board")
+        except Exception as e:
+            await interaction.response.send_message(f"Error: {e}")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="show", description="Show's Item/Prize lists", guild=sync_to_guild)
+@tree.command(name="show", description="Show's Item/Prize lists", guild=SYNC_GUILD)
 @app_commands.autocomplete(argument=ac.show)
 async def show(interaction: discord.Interaction, argument: str):
+    show = Show()
     match argument.lower():
+        case "revealed":
+            embed_description = show.revealed()
+            embed = discord.Embed(title="**Revealed Tiles**", description=embed_description)
+            await interaction.response.send_message(embed=embed)
         case "prizes":
-            show_prize = Show()
-            response = show_prize.Prizes()
-            embed = discord.Embed(title="List of available prizes", description=response)
+            embed_description = show.prizes()
+            embed = discord.Embed(title="List of available prizes", description=embed_description)
             await interaction.user.send(embed=embed)
             await interaction.response.send_message("Check your DM's", ephemeral=True)
         case "items":
-            show_item = Show()
-            response = show_item.Items()
-            embed = discord.Embed(title="List of available items", description=response)
+            embed_description = show.items()
+            embed = discord.Embed(title="List of available items", description=embed_description)
             await interaction.user.send(embed=embed)
             await interaction.response.send_message("Check your DM's", ephemeral=True)
         case "generated":
             if interaction.user.guild_permissions.administrator:
-                show_generated = Show()
-                response = show_generated.Generated()
-                if response != "Must generate items first.":
-                    embed = discord.Embed(title=f"Generated Item/Prize pairs:", description=response)
+                try:
+                    embed_description = show.generated()
+                    embed = discord.Embed(title=f"Generated Item/Prize pairs:", description=embed_description)
                     await interaction.user.send(embed=embed)
                     await interaction.response.send_message("Check your DM's", ephemeral=True)
-                else:
-                    await interaction.response.send_message(response)
+                except:
+                    await interaction.response.send_message("Must generate items first.")
             else:
-                await interaction.response.send_message(permission_error, ephemeral=True)
-        case "revealed":
-            show_revealed = Show()
-            response = show_revealed.Revealed()
-            if response != "No items have been revealed yet.":
-                embed = discord.Embed(title="Revealed Tiles", description=response)
-                await interaction.response.send_message(embed=embed)
-            else:
-                await interaction.response.send_message(response)
+                await interaction.response.send_message(PERMISSION_ERROR, ephemeral=True)
         case _:
             await interaction.response.send_message("Please specify which list you wish to show.")
             
-@tree.command(name="revealtile", guild=sync_to_guild)
+@tree.command(name="revealtile", guild=SYNC_GUILD)
 async def revealtile(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator:
-        reveal = Reveal()
-        response = reveal.Tile()
-        embed = discord.Embed(title="Revealed Items", description=response)
-        await interaction.response.send_message(embed=embed)
+        tiles = Reveal()
+        embed_description = tiles.tile()
+        if embed_description:
+            await interaction.response.send_message(f"**Revealed tiles are:**\n{embed_description}")
+        else:
+            await interaction.response.send_message("No more tiles to reveal", ephemeral=True)
     else:
-        await interaction.response.send_message(permission_error, ephemeral=True)
+        await interaction.response.send_message(PERMISSION_ERROR, ephemeral=True)
         
-@tree.command(name="releaseboard", guild=sync_to_guild)
+@tree.command(name="releaseboard", guild=SYNC_GUILD)
 async def releaseboard(interaction: discord.Interaction):
+    release = Reveal()
     if interaction.user.guild_permissions.administrator:
-        reveal = Reveal()
-        response = reveal.Board()
-        embed = discord.Embed(title="This months bingo board!", description=response)
+        embed_description = release.board()
+        embed_description.translate(NUKE_LIST)
+        embed = discord.Embed(title="This months bingo board!", description=embed_description)
         await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message(permission_error, ephemeral=True)
+        await interaction.response.send_message(PERMISSION_ERROR, ephemeral=True)
             
-@tree.command(name="verify", guild=sync_to_guild)
-@app_commands.describe(item="The item you wish to submit", screenshot="Chatbox confirming loot + RSN and Date. WIN + SHIFT + S for an easy screenshot.")
+@tree.command(name="verify", guild=SYNC_GUILD)
+@app_commands.describe(item="The item you wish to submit",
+                        screenshot="Chatbox confirming loot + RSN and Date. WIN + SHIFT + S for an easy screenshot.")
 @app_commands.autocomplete(item=ac.item)
 async def verify(interaction: discord.Interaction, item: str, screenshot: discord.Attachment):
+    await command_tracker(interaction)
     verifier = Verify()
-    response = verifier.verify_drop(item=item)
-    if response != False:
-        embed = discord.Embed(title="BINGO!", description=f"{item} was on the list, you win {response}")
+    check_item = verifier.verify_drop(item)
+    print(check_item)
+    if check_item:
+        won_item = str(check_item["item"])
+        won_prize = str(check_item["prize"])
+        embed = discord.Embed(title="BINGO!", description=f"[{won_item.capitalize()}] you win! [{won_prize.capitalize()}]  |  {MENTION_ID} will pay out shortly")
         embed.set_image(url=screenshot.url)
         await interaction.response.send_message(embed=embed)
-        return
+
     else:
-        embed = discord.Embed(title="LOSER...", description=f"{item} is not on the list, try again eh?")
+        embed = discord.Embed(title=f"LOSER... {item} was not on the list this time.")
         embed.set_image(url=screenshot.url)
         await interaction.response.send_message(embed=embed)
-        return
-        
-@tree.command(name="additem", description="Add items to the items list", guild=sync_to_guild)
+
+
+@tree.command(name="additem", description="Add items to the items list", guild=SYNC_GUILD)
 @app_commands.describe(item="item in lowercase without symbols to add")
 async def additem(interaction: discord.Interaction, item: str):
+    handler = EntryHandler()
     if interaction.user.guild_permissions.administrator:
-        bh = BingoHandler()
-        if bh.Additem(item):
+        if handler.add_item(item):
             await interaction.response.send_message(f"Added [{item}] to items list")
         else:
-            await interaction.response.send_message(f"[{item}] already exists.")
+            await interaction.response.send_message(f"[{item}] already exists on the list")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="removeitem", description="Remove items from the items list", guild=sync_to_guild)
+
+@tree.command(name="removeitem", description="Remove items from the items list", guild=SYNC_GUILD)
 @app_commands.describe(item="item in lowercase without symbols to remove")
 @app_commands.autocomplete(item=ac.item)
 async def removeitem(interaction: discord.Interaction, item: str):
+    handler = EntryHandler()
     if interaction.user.guild_permissions.administrator:
-        bh = BingoHandler()
-        if bh.Removeitem(item):
+        if handler.remove_item(item):
             await interaction.response.send_message(f"Removed [{item}] from items list")
         else:
-            await interaction.response.send_message(f"[{item}] does not exist.")
+            await interaction.response.send_message(f"[{item}] does not exist on the list")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="addprize", description="Add prizes to the prize list", guild=sync_to_guild)
+@tree.command(name="addprize", description="Add prizes to the prize list", guild=SYNC_GUILD)
 @app_commands.describe(prize="prize in lowercase to add")
 async def addprize(interaction: discord.Interaction, prize: str):
+    handler = EntryHandler()
     if interaction.user.guild_permissions.administrator:
-        bh = BingoHandler()
-        if bh.Addprize(prize):
+        if handler.add_prize(prize):
             await interaction.response.send_message(f"Added [{prize}] to prize list")
         else:
-            await interaction.response.send_message(f"[{prize}] already exists.")
+            await interaction.response.send_message(f"[{prize}] already exists on the list")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="removeprize", description="Remove prizes from the prize list", guild=sync_to_guild)
+@tree.command(name="removeprize", description="Remove prizes from the prize list", guild=SYNC_GUILD)
 @app_commands.describe(prize="prize in lowercase to remove")
 @app_commands.autocomplete(prize=ac.prize)
 async def removeprize(interaction: discord.Interaction, prize: str):
+    handler = EntryHandler()
     if interaction.user.guild_permissions.administrator:
-        bh = BingoHandler()
-        if bh.Removeprize(prize):
+        if handler.remove_prize(prize):
             await interaction.response.send_message(f"Removed [{prize}] from prize list")
         else:
-            await interaction.response.send_message(f"[{prize}] does not exist.")
+            await interaction.response.send_message(f"[{prize}] does not exist on the list")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="backup", description="Backup current bingo to file", guild=sync_to_guild)
-@app_commands.describe(filename="What you want to call the file, cannot contain [,./\()?!=+#""@]")
+@tree.command(name="backup", description="Backup current bingo to file", guild=SYNC_GUILD)
+@app_commands.describe(filename="What you want to call the file, cannot contain [,. /\()?!=+#""@]")
 async def backup(interaction: discord.Interaction, filename: str):
+    backup = Backup()
     if interaction.user.guild_permissions.administrator:
-        bk = Backup()
-        if bk.Create(filename):
+        try:
+            backup.create(filename)
             await interaction.response.send_message(f"Backup {filename} created.")
-        else:
-            await interaction.response.send_message(f"Blacklisted filename, try with a different name.")
+        except Exception as e:
+            await interaction.response.send_message(f"Error creating backup: {e}")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="loadbackup", description="Loads a bingo file from backup", guild=sync_to_guild)
+@tree.command(name="load", description="Loads a bingo file from backup", guild=SYNC_GUILD)
 @app_commands.describe(filename="Which bingo file to fetch from backup.")
 @app_commands.autocomplete(filename=ac.backup)
-async def loadbackup(interaction: discord.Interaction, filename: str):
+async def load(interaction: discord.Interaction, filename: str):
     if interaction.user.guild_permissions.administrator:
-        bk = Backup()
-        if bk.Load(filename):
-            await interaction.response.send_message(f"Loaded {filename} from backup.")
+        try:
+            backup = Backup()
+            backup.load(filename)
+            await interaction.response.send_message(f"Loaded {backup} from backup.")
+        except Exception as e:
+            await interaction.response.send_message(f"Error loading backup: {e}")
         else:
-            await interaction.response.send_message(f"{filename} does not exist or exists as a blacklisted file.")
+            await interaction.response.send_message(f"{filename} does not exist as a valid backup.")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="listbackups", description="Returns a list of filenames for previous backups stored.", guild=sync_to_guild)
+@tree.command(name="listbackups", description="Returns a list of filenames for previous backups stored.", guild=SYNC_GUILD)
 @app_commands.describe()
 async def listbackups(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator:
-        bk = Backup()
-        response = bk.List()
-        await interaction.response.send_message(response)
-    else:
-        await interaction.response.send_message("No backups currently exist.")
+        backup = Backup()
+        backup_list = backup.list()
+        if backup_list:
+            await interaction.response.send_message(backup_list)
+        else:
+            await interaction.response.send_message("No backups currently stored on file")
 
-@tree.command(name="removebackup", description="Removes backup files.", guild=sync_to_guild)
+@tree.command(name="removebackup", description="Removes backup files.", guild=SYNC_GUILD)
 @app_commands.describe(filename="Which file to delete")
 @app_commands.autocomplete(filename=ac.backup)
 async def removebackup(interaction: discord.Interaction, filename: str):
     if interaction.user.guild_permissions.administrator:
-        bk = Backup()
-        if bk.Remove(filename):
+        backup = Backup()
+        try:
+            backup.remove(filename)
             await interaction.response.send_message(f"Backup {filename} removed from stored backups")
-        else:
-            await interaction.response.send_message(f"{filename} doesnt exist or exists as a blacklisted file")
+        except Exception as e:
+            await interaction.response.send_message(f"Error removing backup: {e}")
     else:
-        await interaction.response.send_message(permission_error)
+        await interaction.response.send_message(PERMISSION_ERROR)
 
-@tree.command(name="help", description="tip#1: Don't let mea anywhere near admin tools.", guild=sync_to_guild)
+
+
+@tree.command(name="help", description="tip#1: Don't let mea anywhere near admin tools.", guild=SYNC_GUILD)
 @app_commands.describe(command="Which command to see help for, {default=all}")
 @app_commands.autocomplete(command=ac.command)
 async def help(interaction: discord.Interaction, command: str):
@@ -300,5 +362,6 @@ async def help(interaction: discord.Interaction, command: str):
             embed.add_field(name="/revealtile", value="Reveals a random item from current bingo board")
             embed.add_field(name="/releaseboard", value="Releases current board to participants, including prizes.")
             await interaction.response.send_message(embed=embed)
-            
-client.run(BotToken)
+
+client.run(BOT_TOKEN)
+

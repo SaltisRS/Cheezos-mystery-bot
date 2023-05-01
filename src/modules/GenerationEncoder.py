@@ -1,4 +1,4 @@
-from .Dclasses import Generation
+from .DataStructure import Generation
 from dataclasses import asdict
 import json
 

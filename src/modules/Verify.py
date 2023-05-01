@@ -21,15 +21,16 @@ class Verify:
             self.not_revealed = json.load(f)
 
 
-    def verify_drop(self, item: str) -> dict:
+    def verify_drop(self, item: str) -> tuple | bool:
         for pair in self.generated:
             if item == pair["item"]:
+                print(f"Found pair: {pair}")
                 self.remove_pair(pair=pair)
                 self.remove_prize(prize=pair["prize"])
-                self.remove_revealed(item=pair["item"])
-                return pair["prize"]
-            else:
-                return False
+                self.remove_not_revealed(item=item)
+                return pair
+        return False
+
             
     def remove_pair(self, pair) -> None:
         self.generated.remove(pair)
@@ -39,15 +40,21 @@ class Verify:
         return
     
     def remove_prize(self, prize: str) -> None:
-        self.prizes.remove(prize)
-        with open("src/Json/prizes.json", "w") as f:
-            json.dump(self.prizes, f, indent=4)
-            print(f"Removed won prize: {prize}")
+        try:
+            self.prizes.remove(prize)
+            with open("src/Json/prizes.json", "w") as f:
+                json.dump(self.prizes, f, indent=4)
+                print(f"Removed won prize: {prize}")
+        except ValueError:
+            print(f"Prize not found: {prize}")
         return
             
-    def remove_revealed(self, item: str) -> None:
-        self.not_revealed.remove(item)
-        with open("src/Json/not_revealed.json", "w") as f:
-            json.dump(self.not_revealed, f, indent=4)
-            print(f"Updated removed item: {item}")
+    def remove_not_revealed(self, item: str) -> None:
+        try:
+            self.not_revealed.remove(item)
+            with open("src/Json/not_revealed.json", "w") as f:
+                json.dump(self.not_revealed, f, indent=4)
+                print(f"Updated removed item: {item}")
+        except ValueError:
+            print(f"Item not found: {item}")
         return

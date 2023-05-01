@@ -1,48 +1,42 @@
 import json
 
-
-
-
-
-
-
 class Show:
     def __init__(self):
         with open("src/Json/prizes.json", "r") as f:
-            self.prizes = json.load(f)
+            self.prize = json.load(f)
         with open("src/Json/items.json", "r") as f:
-            self.items = json.load(f)
+            self.item = json.load(f)
         try:
             with open("src/Json/generated.json", "r") as f:
-                self.generated = json.load(f)
-        except:
-            return "Must generate items first."
+                self.gen = json.load(f)
+        except Exception as e:
+            print(e)
         try:
             with open("src/Json/revealed.json", "r") as f:
-                self.revealed = json.load(f)
-        except:
-            return "No items have been revealed yet."
+                self.reveal = json.load(f)
+        except Exception as e:
+            print(e)
         self.embed_description = ""
                 
             
-    def Prizes(self):
-        for prize in self.prizes:
+    def prizes(self):
+        for prize in self.prize:
             self.embed_description += f"{prize} \n"
         return self.embed_description
     
-    def Items(self):
-        for item in self.items:
+    def items(self):
+        for item in self.item:
             self.embed_description += f"{item} \n"
         return self.embed_description
     
-    def Generated(self):
-        for pair in self.generated:
+    def generated(self):
+        for pair in self.gen:
             item = pair["item"]
             prize = pair["prize"]
             self.embed_description += f"{str(item).title()} : {str(prize).title()}\n"
         return self.embed_description
     
-    def Revealed(self):
-        for item in self.revealed:
+    def revealed(self):
+        for item in self.reveal:
             self.embed_description += f"{item} \n"
         return self.embed_description

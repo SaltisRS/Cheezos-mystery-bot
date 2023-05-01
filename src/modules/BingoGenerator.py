@@ -1,5 +1,5 @@
 import json
-from .Dclasses import Generation
+from .DataStructure import Generation
 from .GenerationEncoder import GenerationEncoder
 import random
 
@@ -12,7 +12,7 @@ class BingoGenerator:
         self.generated_items = []
         self.only_items = []
             
-    def Generate(self, amount: int):
+    def generate(self, amount: int):
         rand_item = random.sample(self.items, k=amount)
         rand_prize = random.sample(self.prizes, k=amount)
         for i in range(amount):

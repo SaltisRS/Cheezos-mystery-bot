@@ -19,7 +19,7 @@ class Reveal:
         except:
             self.error = "Nothing revealed yet!"
             
-    def Tile(self):
+    def tile(self):
         if len(self.not_revealed) > 0:
             to_reveal = random.sample(self.not_revealed, k=1)
             self.revealed.append(to_reveal[0])
@@ -30,10 +30,12 @@ class Reveal:
                 json.dump(self.revealed, f, indent=4)
             for item in self.revealed:
                 self.embed_description += f"{str(item.title())}\n"
-        return self.embed_description
+            return self.embed_description
+        else:
+            return False
     
     
-    def Board(self):
+    def board(self):
         for pair in self.generated:
             item = pair["item"]
             prize = pair["prize"]
